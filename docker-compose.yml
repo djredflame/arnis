@@ -1,0 +1,132 @@
+services:
+  # Cross-platform CLI workflow for generation and headless runs.
+  arnis:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: cli-runtime
+      network: ${ARNIS_BUILD_NETWORK:-host}
+      args:
+        ARNIS_RUN_BUILD_VALIDATION: ${ARNIS_RUN_BUILD_VALIDATION:-0}
+    image: ${ARNIS_CLI_IMAGE:-arnis:local}
+    pull_policy: ${ARNIS_PULL_POLICY:-never}
+    working_dir: /data
+    environment:
+      HOME: /data
+      XDG_CACHE_HOME: ${ARNIS_CACHE_HOME:-/data/.cache}
+    dns:
+      - ${ARNIS_DNS_1:-1.1.1.1}
+      - ${ARNIS_DNS_2:-8.8.8.8}
+    volumes:
+      - ${ARNIS_DATA_VOLUME:-arnis_data}:/data
+    networks:
+      - arnis
+    entrypoint:
+      - /usr/local/bin/arnis
+    restart: "no"
+
+  # Cross-platform live integration tests that depend on external Overpass APIs.
+  arnis-test-live:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test-runtime
+      network: ${ARNIS_BUILD_NETWORK:-host}
+      args:
+        ARNIS_RUN_BUILD_VALIDATION: ${ARNIS_RUN_BUILD_VALIDATION:-0}
+    image: ${ARNIS_TEST_IMAGE:-arnis-test:local}
+    pull_policy: ${ARNIS_PULL_POLICY:-never}
+    working_dir: /src
+    dns:
+      - ${ARNIS_DNS_1:-1.1.1.1}
+      - ${ARNIS_DNS_2:-8.8.8.8}
+    entrypoint:
+      - /bin/sh
+    command:
+      - -c
+      - |
+        attempts=0
+        until cargo test --locked --all-targets --all-features; do
+          attempts=$$((attempts + 1))
+          if [ "$$attempts" -ge ${ARNIS_TEST_RETRIES:-5} ]; then
+            exit 1
+          fi
+          echo "Retrying live test suite after transient network failure ($$attempts/${ARNIS_TEST_RETRIES:-5})..."
+          sleep ${ARNIS_TEST_RETRY_DELAY:-5}
+        done
+    networks:
+      - arnis
+    restart: "no"
+
+  # Linux-only desktop/Tauri runtime that requires an X11 session on the host.
+  arnis-gui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: gui-runtime
+      network: ${ARNIS_BUILD_NETWORK:-host}
+      args:
+        ARNIS_RUN_BUILD_VALIDATION: ${ARNIS_RUN_BUILD_VALIDATION:-0}
+    image: ${ARNIS_GUI_IMAGE:-arnis-gui:local}
+    pull_policy: ${ARNIS_PULL_POLICY:-never}
+    working_dir: /data
+    dns:
+      - ${ARNIS_DNS_1:-1.1.1.1}
+      - ${ARNIS_DNS_2:-8.8.8.8}
+    environment:
+      DISPLAY: ${ARNIS_GUI_DISPLAY:-${DISPLAY:-:0}}
+      HOME: /data
+      XDG_CACHE_HOME: ${ARNIS_CACHE_HOME:-/data/.cache}
+    volumes:
+      - ${ARNIS_DATA_VOLUME:-arnis_data}:/data
+      - ${ARNIS_X11_SOCKET_DIR:-/tmp/.X11-unix}:${ARNIS_X11_SOCKET_DIR:-/tmp/.X11-unix}
+    networks:
+      - arnis
+    entrypoint:
+      - /usr/local/bin/arnis
+    restart: "no"
+
+  # Linux-only headless desktop/Tauri runtime exposed over VNC for Docker-only setups.
+  arnis-gui-headless:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: gui-headless-runtime
+      network: ${ARNIS_BUILD_NETWORK:-host}
+      args:
+        ARNIS_RUN_BUILD_VALIDATION: ${ARNIS_RUN_BUILD_VALIDATION:-0}
+    image: ${ARNIS_HEADLESS_IMAGE:-arnis-gui-headless:local}
+    pull_policy: ${ARNIS_PULL_POLICY:-never}
+    working_dir: /data
+    dns:
+      - ${ARNIS_DNS_1:-1.1.1.1}
+      - ${ARNIS_DNS_2:-8.8.8.8}
+    environment:
+      DISPLAY: ${ARNIS_HEADLESS_DISPLAY:-:99}
+      HOME: /data
+      XDG_CACHE_HOME: ${ARNIS_CACHE_HOME:-/data/.cache}
+      ARNIS_HEADLESS_DISPLAY: ${ARNIS_HEADLESS_DISPLAY:-:99}
+      ARNIS_HEADLESS_WIDTH: ${ARNIS_HEADLESS_WIDTH:-1920}
+      ARNIS_HEADLESS_HEIGHT: ${ARNIS_HEADLESS_HEIGHT:-1080}
+      ARNIS_HEADLESS_DEPTH: ${ARNIS_HEADLESS_DEPTH:-24}
+      ARNIS_GUI_VNC_PORT: ${ARNIS_GUI_VNC_PORT:-5900}
+      ARNIS_GUI_VNC_PASSWORD: ${ARNIS_GUI_VNC_PASSWORD:-}
+    volumes:
+      - ${ARNIS_DATA_VOLUME:-arnis_data}:/data
+      - ./scripts/docker/headless-gui-entrypoint.sh:/usr/local/bin/headless-gui-entrypoint:ro
+      - ./scripts/shared:/usr/local/shared:ro
+    # Use host networking on Linux to avoid VNC handshake issues through
+    # container port publishing/proxy layers.
+    network_mode: host
+    entrypoint:
+      - /usr/local/bin/headless-gui-entrypoint
+    restart: "no"
+
+volumes:
+  arnis_data:
+    name: ${ARNIS_DATA_VOLUME:-arnis_data}
+
+networks:
+  arnis:
+    name: ${ARNIS_NETWORK_NAME:-arnis}
+    driver: ${ARNIS_NETWORK_DRIVER:-bridge}

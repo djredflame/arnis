@@ -3,6 +3,7 @@
 
 # Environment files
 .env
+.env.docker
 /.direnv
 
 # Build artifacts
