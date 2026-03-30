@@ -34,7 +34,8 @@ WORKDIR /src
 
 COPY . /src/
 
-# Build GUI-enabled artifacts before producing runtime images.
+# Build the full-featured runtime binary once and reuse it for both GUI and CLI
+# workflows so world generation uses the same code path as the desktop app.
 RUN cargo build --locked --all-targets --all-features --release
 RUN cp /src/target/release/arnis /tmp/arnis-gui
 RUN if [ "${ARNIS_RUN_BUILD_VALIDATION}" = "1" ]; then \
@@ -50,10 +51,6 @@ RUN if [ "${ARNIS_RUN_BUILD_VALIDATION}" = "1" ]; then \
   else \
     echo "Skipping build-time cargo test validation (ARNIS_RUN_BUILD_VALIDATION=${ARNIS_RUN_BUILD_VALIDATION})."; \
   fi
-
-# Build the CLI-only release binary used by headless/container workflows.
-RUN cargo build --locked --release --no-default-features
-RUN cp /src/target/release/arnis /tmp/arnis-cli
 
 # Reuse the build environment for manual reruns of the live test suite.
 FROM build AS test-runtime
@@ -92,15 +89,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY scripts/docker/headless-gui-entrypoint.sh /usr/local/bin/headless-gui-entrypoint
 RUN chmod +x /usr/local/bin/headless-gui-entrypoint
 
-# Minimal CLI runtime image for generation jobs.
-FROM python:3.13-slim-bookworm AS cli-runtime
+# CLI runtime image for generation jobs. It intentionally reuses the same
+# full-featured Arnis binary as the GUI runtime so Java world output stays
+# consistent across Docker and desktop/VNC workflows.
+FROM gui-runtime AS cli-runtime
 
 ENV ARNIS_BINARY=/usr/local/bin/arnis
 
 WORKDIR /data
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  ca-certificates \
+  python3 \
   && rm -rf /var/lib/apt/lists/*
-
-COPY --from=build /tmp/arnis-cli /usr/local/bin/arnis

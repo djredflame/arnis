@@ -19,7 +19,9 @@ HEADLESS_WIDTH="${ARNIS_HEADLESS_WIDTH:-1920}"
 HEADLESS_HEIGHT="${ARNIS_HEADLESS_HEIGHT:-1080}"
 HEADLESS_DEPTH="${ARNIS_HEADLESS_DEPTH:-24}"
 VNC_PORT="${ARNIS_GUI_VNC_PORT:-5900}"
+VNC_BIND="${ARNIS_GUI_VNC_BIND:-127.0.0.1}"
 VNC_PASSWORD="${ARNIS_GUI_VNC_PASSWORD:-}"
+HEADLESS_WAIT_SECONDS="${ARNIS_HEADLESS_START_WAIT:-20}"
 STATE_DIR="${ARNIS_HEADLESS_STATE_DIR:-/tmp/arnis-headless-gui}"
 HOME_DIR="${STATE_DIR}/home"
 XVFB_LOG="${STATE_DIR}/xvfb.log"
@@ -58,6 +60,7 @@ X11VNC_ARGS=(
   -noxfixes
   -noxdamage
   -rfbversion 3.3
+  -listen "${VNC_BIND}"
   -rfbport "${VNC_PORT}"
 )
 
@@ -69,5 +72,31 @@ else
 fi
 
 DISPLAY="${DISPLAY_ID}" x11vnc "${X11VNC_ARGS[@]}"
+
+wait_for_vnc() {
+  local attempt=0
+  local connect_host="${VNC_BIND}"
+
+  case "${connect_host}" in
+    0.0.0.0|::|'')
+      connect_host="127.0.0.1"
+      ;;
+  esac
+
+  while [ "${attempt}" -lt "${HEADLESS_WAIT_SECONDS}" ]; do
+    if x11vnc -display "${DISPLAY_ID}" -query client_count >/dev/null 2>&1; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    sleep 1
+  done
+
+  return 1
+}
+
+if ! wait_for_vnc; then
+  tail -n 50 "${X11VNC_LOG}" >&2 || true
+  exit 1
+fi
 
 exec /usr/local/bin/arnis
