@@ -521,11 +521,6 @@ fn pack_heightmap_values(values: &[i32; 256]) -> LongArray {
     }
 
     LongArray::new(result)
-    if bit_pos > 0 {
-        result.push(current);
-    }
-
-    LongArray::new(result)
 }
 
 /// Merge compound lists (entities, block_entities) from chunk_to_modify into chunk
