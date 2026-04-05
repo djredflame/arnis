@@ -710,6 +710,7 @@ fn gui_start_generation(
     spawn_point: Option<(f64, f64)>,
     telemetry_consent: bool,
     world_format: String,
+    metadata_enabled: bool,
 ) -> Result<(), String> {
     use progress::emit_gui_error;
     use LLBBox;
@@ -902,6 +903,7 @@ fn gui_start_generation(
                 timeout: Some(std::time::Duration::from_secs(40)),
                 spawn_lat: None,
                 spawn_lng: None,
+                export_metadata: metadata_enabled,
             };
 
             // If skip_osm_objects is true (terrain-only mode), skip fetching and processing OSM data
@@ -922,6 +924,7 @@ fn gui_start_generation(
                     ground,
                     &args,
                     generation_options.clone(),
+                    None,
                 );
                 // Explicitly release session lock before showing Done message
                 // so Minecraft can open the world immediately
@@ -975,6 +978,7 @@ fn gui_start_generation(
                         ground,
                         &args,
                         generation_options.clone(),
+                        None,
                     );
                     // Explicitly release session lock before showing Done message
                     // so Minecraft can open the world immediately

@@ -130,6 +130,8 @@ pub fn clip_water_ring_to_bbox(
         .map(|(i, &(x, z))| ProcessedNode {
             id: 1_000_000_000 + i as u64,
             tags: HashMap::new(),
+            lat: None,
+            lon: None,
             x: x.clamp(min_x, max_x).round() as i32,
             z: z.clamp(min_z, max_z).round() as i32,
         })
@@ -215,6 +217,8 @@ fn clip_polyline_to_bbox(nodes: &[ProcessedNode], xzbbox: &XZBBox) -> Vec<Proces
                         x: intersection.0.round() as i32,
                         z: intersection.1.round() as i32,
                         tags: HashMap::new(),
+                        lat: None,
+                        lon: None,
                     });
                 }
             } else if !current_inside && !next_inside {
@@ -244,6 +248,8 @@ fn clip_polyline_to_bbox(nodes: &[ProcessedNode], xzbbox: &XZBBox) -> Vec<Proces
                             x: intersection.0.round() as i32,
                             z: intersection.1.round() as i32,
                             tags: HashMap::new(),
+                            lat: None,
+                            lon: None,
                         });
                     }
                 }
@@ -696,9 +702,11 @@ fn assign_node_ids_preserving_endpoints(
                     if matches_endpoint(coord, first, tolerance) {
                         return ProcessedNode {
                             id: first.id,
+                            tags: HashMap::new(),
+                            lat: None,
+                            lon: None,
                             x: coord.0.round() as i32,
                             z: coord.1.round() as i32,
-                            tags: HashMap::new(),
                         };
                     }
                 }
@@ -706,9 +714,11 @@ fn assign_node_ids_preserving_endpoints(
                     if matches_endpoint(coord, last, tolerance) {
                         return ProcessedNode {
                             id: last.id,
+                            tags: HashMap::new(),
+                            lat: None,
+                            lon: None,
                             x: coord.0.round() as i32,
                             z: coord.1.round() as i32,
-                            tags: HashMap::new(),
                         };
                     }
                 }
@@ -716,9 +726,11 @@ fn assign_node_ids_preserving_endpoints(
 
             ProcessedNode {
                 id: way_id.wrapping_mul(10000000).wrapping_add(i as u64),
+                tags: HashMap::new(),
+                lat: None,
+                lon: None,
                 x: coord.0.round() as i32,
                 z: coord.1.round() as i32,
-                tags: HashMap::new(),
             }
         })
         .collect()

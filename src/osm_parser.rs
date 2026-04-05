@@ -85,7 +85,8 @@ impl SplitOsmData {
 pub struct ProcessedNode {
     pub id: u64,
     pub tags: HashMap<String, String>,
-
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
     // Minecraft coordinates
     pub x: i32,
     pub z: i32,
@@ -211,6 +212,8 @@ pub fn parse_osm_data(
             let processed: ProcessedNode = ProcessedNode {
                 id: element.id,
                 tags: element.tags.clone().unwrap_or_default(),
+                lat: Some(lat),
+                lon: Some(lon),
                 x: xzpoint.x,
                 z: xzpoint.z,
             };

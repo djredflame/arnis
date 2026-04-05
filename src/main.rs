@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod args;
+mod metadata;
 #[cfg(feature = "bedrock")]
 mod bedrock_block_map;
 mod block_definitions;
@@ -218,13 +219,18 @@ fn run_cli() {
     };
 
     // Generate world
+    // Prepare POI collection if needed
+    let mut pois: Vec<metadata::poi::Poi> = Vec::new();
+    let pois_opt = if args.export_metadata { Some(&mut pois) } else { None };
+
     match data_processing::generate_world_with_options(
         parsed_elements,
         xzbbox,
         args.bbox,
         ground,
         &args,
-        generation_options,
+        generation_options.clone(),
+        pois_opt,
     ) {
         Ok(_) => {
             if args.bedrock {
@@ -247,6 +253,16 @@ fn run_cli() {
                             e
                         );
                     }
+                }
+            }
+            // Export metadata if requested
+            if args.export_metadata {
+                let world_name = generation_options.level_name.clone().unwrap_or_else(|| "world".to_string());
+                let world_folder = generation_path.clone();
+                if let Err(e) = metadata::exporter::export_metadata(&world_name, &pois, &world_folder) {
+                    eprintln!("{} Failed to export metadata: {}", "Warning:".yellow().bold(), e);
+                } else {
+                    println!("{} Exported POI metadata to metadata.json", "Info:".green().bold());
                 }
             }
         }

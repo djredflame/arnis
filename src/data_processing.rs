@@ -8,6 +8,8 @@ use crate::ground_generation;
 use crate::map_renderer;
 use crate::osm_parser::{ProcessedElement, ProcessedMemberRole};
 use crate::progress::{emit_gui_progress_update, emit_map_preview_ready, emit_show_in_folder};
+use crate::metadata::poi::{Poi, category_from_tags, name_fallback};
+use crate::metadata::representative_point::compute_representative_point;
 #[cfg(feature = "gui")]
 use crate::telemetry::{send_log, LogLevel};
 use crate::world_editor::{WorldEditor, WorldFormat};
@@ -34,6 +36,7 @@ pub fn generate_world_with_options(
     ground: Ground,
     args: &Args,
     options: GenerationOptions,
+    mut collect_pois: Option<&mut Vec<Poi>>,
 ) -> Result<PathBuf, String> {
     let output_path = options.path.clone();
     let world_format = options.format;
@@ -50,6 +53,11 @@ pub fn generate_world_with_options(
     let ground = Arc::new(ground);
 
     println!("{} Processing data...", "[4/7]".bold());
+
+
+    // Build coordinate transformer for POI export
+    let (coord_transformer, _) = crate::coordinate_system::transformation::CoordTransformer::llbbox_to_xzbbox(&llbbox, 1.0)
+        .expect("Failed to construct coordinate transformer");
 
     // Build highway connectivity map once before processing
     let highway_connectivity = highways::build_highway_connectivity_map(&elements);
@@ -108,6 +116,52 @@ pub fn generate_world_with_options(
 
     // Process all elements
     for element in elements.into_iter() {
+        // POI collection logic
+        if let Some(ref mut pois) = collect_pois {
+            use std::collections::HashMap;
+            let tags = element.tags();
+            let is_poi =
+                tags.get("railway").map(|v| v == "station").unwrap_or(false)
+                || tags.get("tourism").map(|v| v == "attraction").unwrap_or(false)
+                || tags.get("amenity").map(|v| v == "school" || v == "hospital" || v == "townhall").unwrap_or(false)
+                || tags.get("leisure").map(|v| v == "park" || v == "stadium").unwrap_or(false)
+                || tags.get("place").map(|v| v == "square").unwrap_or(false)
+                || tags.get("historic").map(|v| v == "memorial" || v == "monument").unwrap_or(false)
+                || tags.get("memorial").is_some();
+            if is_poi {
+                // Geometry type
+                let geometry_type = match &element {
+                    crate::osm_parser::ProcessedElement::Node(_) => "node",
+                    crate::osm_parser::ProcessedElement::Way(_) => "way",
+                    crate::osm_parser::ProcessedElement::Relation(_) => "relation",
+                }.to_string();
+
+                // Category
+                let category = category_from_tags(tags);
+
+                // Use the real transformer for correct coordinate conversion
+                let rep = compute_representative_point(&element, Some(&coord_transformer));
+
+                // Name fallback
+                let name = name_fallback(tags, &category, element.id() as i64);
+
+                let tags_map: HashMap<String, String> = tags.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+
+                pois.push(Poi {
+                    name,
+                    osm_id: element.id() as i64,
+                    category,
+                    geometry_type,
+                    lat: rep.lat,
+                    lon: rep.lon,
+                    x: rep.x,
+                    z: rep.z,
+                    position_valid: rep.valid,
+                    position_error: rep.error,
+                    tags: tags_map,
+                });
+            }
+        }
         process_pb.inc(1);
         current_progress_prcs += progress_increment_prcs;
         if (current_progress_prcs - last_emitted_progress).abs() > 0.25 {
@@ -349,6 +403,15 @@ pub fn generate_world_with_options(
                 #[cfg(feature = "gui")]
                 send_log(LogLevel::Warning, &warning_msg);
             }
+        }
+    }
+
+    // Export metadata.json if enabled
+    let metadata_enabled = std::env::var("ARNIS_METADATA_ENABLED").unwrap_or_else(|_| "false".to_string()) == "true";
+    if metadata_enabled {
+        if let Some(ref pois) = collect_pois {
+            let world_name = output_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let _ = crate::metadata::exporter::export_metadata(world_name, pois, &output_path);
         }
     }
 

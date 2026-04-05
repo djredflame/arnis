@@ -253,6 +253,13 @@ function setupProgressListener() {
 }
 
 function initSettings() {
+    // Metadata toggle
+    const metadataToggle = document.getElementById("metadata-toggle");
+    const metadataKey = 'metadata-enabled';
+    metadataToggle.checked = localStorage.getItem(metadataKey) === 'true';
+    metadataToggle.addEventListener("change", () => {
+      localStorage.setItem(metadataKey, metadataToggle.checked ? 'true' : 'false');
+    });
   // Settings
   const settingsModal = document.getElementById("settings-modal");
   const slider = document.getElementById("scale-value-slider");
@@ -891,22 +898,26 @@ async function startGeneration() {
     // Get telemetry consent (defaults to false if not set)
     const telemetryConsent = window.getTelemetryConsent ? window.getTelemetryConsent() : false;
 
+    // Metadata toggle
+    var metadataEnabled = document.getElementById("metadata-toggle").checked;
+
     // Pass the selected options to the Rust backend
     await invoke("gui_start_generation", {
-        bboxText: selectedBBox,
-        selectedWorld: worldPath,
-        worldScale: scale,
-        groundLevel: ground_level,
-        terrainEnabled: terrain,
-        skipOsmObjects: skipOsmObjects,
-        interiorEnabled: interior,
-        roofEnabled: roof,
-        fillgroundEnabled: fill_ground,
-        landCoverEnabled: land_cover,
-        isNewWorld: true,
-        spawnPoint: spawnPoint,
-        telemetryConsent: telemetryConsent || false,
-        worldFormat: selectedWorldFormat
+      bboxText: selectedBBox,
+      selectedWorld: worldPath,
+      worldScale: scale,
+      groundLevel: ground_level,
+      terrainEnabled: terrain,
+      skipOsmObjects: skipOsmObjects,
+      interiorEnabled: interior,
+      roofEnabled: roof,
+      fillgroundEnabled: fill_ground,
+      landCoverEnabled: land_cover,
+      isNewWorld: true,
+      spawnPoint: spawnPoint,
+      telemetryConsent: telemetryConsent || false,
+      worldFormat: selectedWorldFormat,
+      metadataEnabled: metadataEnabled
     });
 
     console.log("Generation process started.");

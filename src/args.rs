@@ -67,6 +67,10 @@ pub struct Args {
     #[arg(long)]
     pub debug: bool,
 
+    /// Export metadata about POIs to metadata.json (optional)
+    #[arg(long)]
+    pub export_metadata: bool,
+
     /// Set floodfill timeout (seconds) (optional)
     #[arg(long, value_parser = parse_duration)]
     pub timeout: Option<Duration>,
