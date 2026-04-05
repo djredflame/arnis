@@ -46,7 +46,7 @@ extract_path_arg() {
     index=$((index + 1))
   done
 
-  return 1
+  printf '\n'
 }
 
 ensure_container_path_exists() {
@@ -83,7 +83,8 @@ if [ "${service}" = "arnis-gui-headless" ]; then
 fi
 
 if [ "${service}" = "arnis" ]; then
-  if path_arg="$(extract_path_arg "$@")"; then
+  path_arg="$(extract_path_arg "$@")"
+  if [ -n "${path_arg}" ]; then
     ensure_container_path_exists "${service}" "${path_arg}"
   fi
 fi

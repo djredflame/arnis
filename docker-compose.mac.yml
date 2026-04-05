@@ -1,0 +1,7 @@
+services:
+  arnis-gui-headless:
+    network_mode: bridge
+    environment:
+      ARNIS_GUI_VNC_BIND: 0.0.0.0
+    ports:
+      - "127.0.0.1:${ARNIS_GUI_VNC_PORT:-5900}:${ARNIS_GUI_VNC_PORT:-5900}"

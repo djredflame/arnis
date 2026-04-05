@@ -58,6 +58,9 @@ run_static_tests() {
   require_env_key "ARNIS_GUI_VNC_BIND"
   require_env_key "ARNIS_GUI_VNC_PORT"
   require_env_key "ARNIS_GUI_VNC_PASSWORD"
+  require_env_key "ARNIS_DISABLE_OS_COMPOSE_OVERRIDE"
+  require_env_key "ARNIS_WORLD_EXPORT_DIR"
+  require_env_key "ARNIS_DOCKER_COPY_IMAGE"
 
   local output
 
@@ -80,6 +83,9 @@ run_static_tests() {
   output="$("${REPO_ROOT}/scripts/docker/ps.sh" --help)"
   assert_output_contains "${output}" "Lists the services" "ps.sh --help"
 
+  output="$(${REPO_ROOT}/scripts/docker/export-world.sh --help)"
+  assert_output_contains "${output}" "Exports generated worlds" "export-world.sh --help"
+  assert_output_contains "${output}" "--list" "export-world.sh --help"
   output="$("${REPO_ROOT}/scripts/docker/down.sh" --help)"
   assert_output_contains "${output}" "Stops services" "down.sh --help"
 

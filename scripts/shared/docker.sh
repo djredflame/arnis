@@ -6,6 +6,7 @@ SHARED_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SHARED_DIR}/../.." && pwd)"
 DOCKER_ENV_FILE="${REPO_ROOT}/.env.docker"
 DEFAULT_RUN_SERVICE="arnis"
+BASE_COMPOSE_FILE="${REPO_ROOT}/docker-compose.yml"
 
 # shellcheck disable=SC1091
 source "${SHARED_DIR}/common.sh"
@@ -23,6 +24,7 @@ print_repo_hint() {
 
 print_compose_env_hint() {
   log_plain 'Compose settings can be customized via .env.docker (see .env.docker.example).'
+  log_plain 'OS-specific overrides are auto-loaded when present: docker-compose.mac.yml, docker-compose.linux.yml, docker-compose.windows.yml.'
 }
 
 print_native_gui_note() {
@@ -140,23 +142,82 @@ handle_compose_help() {
 }
 
 run_compose() {
+  local override_file=""
+
+  override_file="$(detect_os_compose_override_file)"
+
   cd "${REPO_ROOT}"
+
+  local compose_args=(
+    -f "${BASE_COMPOSE_FILE}"
+  )
+
+  if [ -n "${override_file}" ]; then
+    compose_args+=(-f "${override_file}")
+  fi
+
   if [ -f "${DOCKER_ENV_FILE}" ]; then
-    docker compose --env-file "${DOCKER_ENV_FILE}" "$@"
+    docker compose --env-file "${DOCKER_ENV_FILE}" "${compose_args[@]}" "$@"
   else
-    docker compose "$@"
+    docker compose "${compose_args[@]}" "$@"
   fi
 }
 
 run_compose_with_env() {
   local env_name="$1"
   local env_value="$2"
+  local override_file=""
   shift 2
 
+  override_file="$(detect_os_compose_override_file)"
+
   cd "${REPO_ROOT}"
-  if [ -f "${DOCKER_ENV_FILE}" ]; then
-    env "${env_name}=${env_value}" docker compose --env-file "${DOCKER_ENV_FILE}" "$@"
-  else
-    env "${env_name}=${env_value}" docker compose "$@"
+
+  local compose_args=(
+    -f "${BASE_COMPOSE_FILE}"
+  )
+
+  if [ -n "${override_file}" ]; then
+    compose_args+=(-f "${override_file}")
   fi
+
+  if [ -f "${DOCKER_ENV_FILE}" ]; then
+    env "${env_name}=${env_value}" docker compose --env-file "${DOCKER_ENV_FILE}" "${compose_args[@]}" "$@"
+  else
+    env "${env_name}=${env_value}" docker compose "${compose_args[@]}" "$@"
+  fi
+}
+
+detect_os_compose_override_file() {
+  local os_name=""
+  local override_path=""
+
+  if [ "${ARNIS_DISABLE_OS_COMPOSE_OVERRIDE:-0}" = "1" ]; then
+    printf '\n'
+    return 0
+  fi
+
+  os_name="$(uname -s 2>/dev/null || printf unknown)"
+
+  case "${os_name}" in
+    Darwin*)
+      override_path="${REPO_ROOT}/docker-compose.mac.yml"
+      ;;
+    Linux*)
+      override_path="${REPO_ROOT}/docker-compose.linux.yml"
+      ;;
+    MINGW*|MSYS*|CYGWIN*|Windows_NT)
+      override_path="${REPO_ROOT}/docker-compose.windows.yml"
+      ;;
+    *)
+      override_path=""
+      ;;
+  esac
+
+  if [ -n "${override_path}" ] && [ -f "${override_path}" ]; then
+    printf '%s\n' "${override_path}"
+    return 0
+  fi
+
+  printf '\n'
 }

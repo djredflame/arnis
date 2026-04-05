@@ -1,0 +1,10 @@
+services:
+  # Docker Desktop on Windows requires explicit port publishing for host access.
+  # Keep host exposure local-only via 127.0.0.1 while binding inside the
+  # container to all interfaces so NAT port forwarding can reach x11vnc.
+  arnis-gui-headless:
+    network_mode: bridge
+    environment:
+      ARNIS_GUI_VNC_BIND: 0.0.0.0
+    ports:
+      - "127.0.0.1:${ARNIS_GUI_VNC_PORT:-5900}:${ARNIS_GUI_VNC_PORT:-5900}"
