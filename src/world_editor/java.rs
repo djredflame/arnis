@@ -86,11 +86,10 @@ impl<'a> WorldEditor<'a> {
             other: FnvHashMap::default(),
         };
 
-        let level_data = create_chunk_nbt(&chunk_data);
+        let chunk_nbt = create_chunk_nbt(&chunk_data);
 
-        // Serialize the chunk
         let mut ser_buffer = Vec::with_capacity(8192);
-        fastnbt::to_writer(&mut ser_buffer, &level_data)?;
+        fastnbt::to_writer(&mut ser_buffer, &chunk_nbt)?;
 
         Ok(ser_buffer)
     }
@@ -198,10 +197,9 @@ impl<'a> WorldEditor<'a> {
                     other: chunk_to_modify.other.clone(),
                 };
 
-                // Create chunk NBT and save
-                let level_data = create_chunk_nbt(&chunk);
+                let chunk_nbt = create_chunk_nbt(&chunk);
                 ser_buffer.clear();
-                fastnbt::to_writer(&mut ser_buffer, &level_data)?;
+                fastnbt::to_writer(&mut ser_buffer, &chunk_nbt)?;
                 region.write_chunk(chunk_x as usize, chunk_z as usize, &ser_buffer)?;
             }
         }
@@ -304,8 +302,8 @@ fn create_chunk_nbt(chunk: &Chunk) -> HashMap<String, Value> {
     // Compute heightmaps from block data
     let heightmaps = compute_heightmaps(&chunk.sections);
 
-    // PostProcessing: 24 empty lists (one per section)
-    let post_processing: Vec<Value> = (0..24).map(|_| Value::List(vec![])).collect();
+    // PostProcessing: one empty list per section
+    let post_processing: Vec<Value> = (0..sections.len()).map(|_| Value::List(vec![])).collect();
 
     // Build root-level chunk NBT (modern format — no Level wrapper)
     let mut root = HashMap::from([
@@ -317,7 +315,7 @@ fn create_chunk_nbt(chunk: &Chunk) -> HashMap<String, Value> {
             "Status".to_string(),
             Value::String("minecraft:full".to_string()),
         ),
-        ("isLightOn".to_string(), Value::Byte(1)),
+        ("isLightOn".to_string(), Value::Byte(0)),
         ("InhabitedTime".to_string(), Value::Long(0)),
         ("LastUpdate".to_string(), Value::Long(0)),
         ("sections".to_string(), Value::List(sections)),
@@ -379,13 +377,66 @@ fn build_section_value(section: &Section) -> HashMap<String, Value> {
     ])
 }
 
-/// Compute MOTION_BLOCKING and WORLD_SURFACE heightmaps from section block data.
+/// Compute heightmaps from section block data.
 ///
-/// Returns a Value::Compound with all four heightmap types as packed LongArrays.
+/// Returns a Value::Compound with four heightmap types (MOTION_BLOCKING,
+/// MOTION_BLOCKING_NO_LEAVES, OCEAN_FLOOR, WORLD_SURFACE) as packed LongArrays.
 /// Each heightmap is a 16x16 grid of 9-bit values packed 7 per i64 (37 longs total).
 /// Value for each column = (highest_non_air_Y - MIN_Y + 1), or 0 if all air.
 fn compute_heightmaps(sections: &[Section]) -> Value {
-    let section_map: HashMap<i8, &Section> = sections.iter().map(|s| (s.y, s)).collect();
+    // Precompute per-section metadata to avoid redundant work in the inner loop.
+    enum SectionKind<'a> {
+        Uniform {
+            solid: bool,
+        },
+        NoAir,
+        Mixed {
+            data: &'a LongArray,
+            bits: usize,
+            vals_per_long: usize,
+            mask: u64,
+        },
+    }
+    struct SectionMeta<'a> {
+        y: i8,
+        palette: &'a [super::common::PaletteItem],
+        kind: SectionKind<'a>,
+    }
+
+    let mut metas: Vec<SectionMeta> = sections
+        .iter()
+        .map(|s| {
+            let palette = &s.block_states.palette;
+            let kind = if palette.len() == 1 {
+                SectionKind::Uniform {
+                    solid: palette[0].name != "minecraft:air",
+                }
+            } else if !palette.iter().any(|p| p.name == "minecraft:air") {
+                SectionKind::NoAir
+            } else if let Some(data) = &s.block_states.data {
+                let mut bits = 4;
+                while (1usize << bits) < palette.len() {
+                    bits += 1;
+                }
+                SectionKind::Mixed {
+                    data,
+                    bits,
+                    vals_per_long: 64 / bits,
+                    mask: (1u64 << bits) - 1,
+                }
+            } else {
+                SectionKind::Uniform { solid: false }
+            };
+            SectionMeta {
+                y: s.y,
+                palette,
+                kind,
+            }
+        })
+        .collect();
+
+    // Sort by Y descending so we scan top-down
+    metas.sort_by(|a, b| b.y.cmp(&a.y));
 
     let mut heights = [0i32; 256]; // 16x16 grid, Z-major order
 
@@ -393,58 +444,35 @@ fn compute_heightmaps(sections: &[Section]) -> Value {
         for x in 0..16usize {
             let col_idx = z * 16 + x;
 
-            // Scan from topmost section downward
-            'outer: for y_section in (-4i8..=19).rev() {
-                let Some(section) = section_map.get(&y_section) else {
-                    continue;
-                };
-                let palette = &section.block_states.palette;
-
-                // Uniform section (single palette entry, no data array)
-                if palette.len() == 1 {
-                    if palette[0].name != "minecraft:air" {
-                        let abs_y = (y_section as i32) * 16 + 15;
+            'outer: for meta in &metas {
+                match &meta.kind {
+                    SectionKind::Uniform { solid: false } => continue,
+                    SectionKind::Uniform { solid: true } | SectionKind::NoAir => {
+                        let abs_y = (meta.y as i32) * 16 + 15;
                         heights[col_idx] = abs_y - MIN_Y + 1;
                         break 'outer;
                     }
-                    continue; // All air
-                }
+                    SectionKind::Mixed {
+                        data,
+                        bits,
+                        vals_per_long,
+                        mask,
+                    } => {
+                        for local_y in (0..16usize).rev() {
+                            let block_idx = local_y * 256 + z * 16 + x;
+                            let long_idx = block_idx / vals_per_long;
+                            let bit_offset = (block_idx % vals_per_long) * bits;
 
-                // Check if air exists in palette at all
-                let has_air = palette.iter().any(|p| p.name == "minecraft:air");
-                if !has_air {
-                    // No air → entire section is solid
-                    let abs_y = (y_section as i32) * 16 + 15;
-                    heights[col_idx] = abs_y - MIN_Y + 1;
-                    break 'outer;
-                }
-
-                // Mixed section: decode packed block indices for this column
-                if let Some(data) = &section.block_states.data {
-                    let bits_per_block = {
-                        let mut bits = 4;
-                        while (1usize << bits) < palette.len() {
-                            bits += 1;
-                        }
-                        bits
-                    };
-                    let values_per_long = 64 / bits_per_block;
-                    let mask = (1u64 << bits_per_block) - 1;
-
-                    for local_y in (0..16usize).rev() {
-                        let block_idx = local_y * 256 + z * 16 + x;
-                        let long_idx = block_idx / values_per_long;
-                        let bit_offset = (block_idx % values_per_long) * bits_per_block;
-
-                        if long_idx < data.len() {
-                            let palette_idx =
-                                ((data[long_idx] as u64 >> bit_offset) & mask) as usize;
-                            if palette_idx < palette.len()
-                                && palette[palette_idx].name != "minecraft:air"
-                            {
-                                let abs_y = (y_section as i32) * 16 + local_y as i32;
-                                heights[col_idx] = abs_y - MIN_Y + 1;
-                                break 'outer;
+                            if long_idx < data.len() {
+                                let palette_idx =
+                                    ((data[long_idx] as u64 >> bit_offset) & mask) as usize;
+                                if palette_idx < meta.palette.len()
+                                    && meta.palette[palette_idx].name != "minecraft:air"
+                                {
+                                    let abs_y = (meta.y as i32) * 16 + local_y as i32;
+                                    heights[col_idx] = abs_y - MIN_Y + 1;
+                                    break 'outer;
+                                }
                             }
                         }
                     }
@@ -488,6 +516,11 @@ fn pack_heightmap_values(values: &[i32; 256]) -> LongArray {
         current |= ((val as i64) & 0x1FF) << bit_pos;
         bit_pos += bits;
     }
+    if bit_pos > 0 {
+        result.push(current);
+    }
+
+    LongArray::new(result)
     if bit_pos > 0 {
         result.push(current);
     }
