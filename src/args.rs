@@ -82,11 +82,17 @@ pub struct Args {
     /// Clockwise rotation angle in degrees (optional, range: -90 to 90)
     #[arg(long, default_value_t = 0.0, allow_hyphen_values = true)]
     pub rotation: f64,
+
+    /// Disable the Minecraft build height limit (Y=319).
+    /// When enabled, terrain will use realistic 1:1 scaling without compression,
+    /// even if it exceeds the vanilla height limit.
+    /// Requires a Minecraft data pack that increases the world height.
+    #[arg(long, default_value_t = false)]
+    pub disable_height_limit: bool,
 }
 
 /// Validates CLI arguments after parsing.
-/// For Java Edition: `--path` is required and must point to an existing directory
-/// where a new world will be created automatically.
+/// For Java Edition: `--path` is required. If the directory doesn't exist, it will be created.
 /// For Bedrock Edition (`--bedrock`): `--path` is optional (defaults to Desktop output).
 pub fn validate_args(args: &Args) -> Result<(), String> {
     if args.bedrock {
@@ -100,7 +106,8 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
             }
         }
     } else {
-        // Java: path is required and must be an existing directory
+        // Java: path is required. If it exists, it must be a directory.
+        // If it doesn't exist, create_new_world will create it.
         match &args.path {
             None => {
                 return Err(
@@ -109,12 +116,13 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
                 );
             }
             Some(ref path) => {
-                if !path.exists() {
-                    return Err(format!("Path does not exist: {}", path.display()));
+                if path.exists() && !path.is_dir() {
+                    return Err(format!(
+                        "Path exists but is not a directory: {}",
+                        path.display()
+                    ));
                 }
-                if !path.is_dir() {
-                    return Err(format!("Path is not a directory: {}", path.display()));
-                }
+                // If path doesn't exist, that's OK - create_new_world will create it
             }
         }
     }
@@ -182,6 +190,7 @@ mod tests {
         assert!(!args.debug);
         assert!(!args.terrain);
         assert!(!args.bedrock);
+        assert!(!args.disable_height_limit);
         // interior, roof, land_cover default to true
         assert!(args.interior);
         assert!(args.roof);
@@ -249,6 +258,29 @@ mod tests {
     }
 
     #[test]
+    fn test_disable_height_limit_flag() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let tmp_path = tmpdir.path().to_str().unwrap();
+
+        // Default is false
+        let cmd = ["arnis", "--output-dir", tmp_path, "--bbox", "1,2,3,4"];
+        let args = Args::parse_from(cmd.iter());
+        assert!(!args.disable_height_limit);
+
+        // Flag enables it
+        let cmd = [
+            "arnis",
+            "--output-dir",
+            tmp_path,
+            "--bbox",
+            "1,2,3,4",
+            "--disable-height-limit",
+        ];
+        let args = Args::parse_from(cmd.iter());
+        assert!(args.disable_height_limit);
+    }
+
+    #[test]
     fn test_java_requires_path() {
         let cmd = ["arnis", "--bbox", "1,2,3,4"];
         let args = Args::parse_from(cmd.iter());
@@ -258,18 +290,33 @@ mod tests {
     }
 
     #[test]
-    fn test_java_path_must_exist() {
+    fn test_java_nonexistent_path_is_ok() {
+        // Java: nonexistent paths are OK - create_new_world will create them
+        let tmp = tempfile::tempdir().unwrap();
+        let nonexistent = tmp.path().join("does_not_exist");
         let cmd = [
             "arnis",
             "--output-dir",
-            "/nonexistent/path",
+            nonexistent.to_str().unwrap(),
             "--bbox",
             "1,2,3,4",
         ];
         let args = Args::parse_from(cmd.iter());
         let result = validate_args(&args);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_java_path_exists_but_is_file_fails() {
+        // Java: if path exists but is a file, fail
+        let tmpfile = tempfile::NamedTempFile::new().unwrap();
+        let tmp_path = tmpfile.path().to_str().unwrap();
+
+        let cmd = ["arnis", "--output-dir", tmp_path, "--bbox", "1,2,3,4"];
+        let args = Args::parse_from(cmd.iter());
+        let result = validate_args(&args);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("does not exist"));
+        assert!(result.unwrap_err().contains("not a directory"));
     }
 
     #[test]
