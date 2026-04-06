@@ -227,7 +227,19 @@ output="$(ARNIS_LOG_COLOR=never ARNIS_UNIT_ROOT="${REPO_ROOT}" bash -c '
   export_entry_by_index 0 /tmp/out ask
   export_entry_by_index 1 /tmp/out ask
 ')"
-assert_output_contains "${output}" 'PATH=/tmp/arnis-export' 'export-io to_docker_host_path passthrough'
+path_line="$(printf '%s\n' "${output}" | grep '^PATH=' | head -n 1 || true)"
+[ -n "${path_line}" ] || die 'export-io to_docker_host_path did not emit a PATH= line'
+case "$(uname -s 2>/dev/null || printf unknown)" in
+  MINGW*|MSYS*|CYGWIN*|Windows_NT)
+    case "${path_line}" in
+      PATH=[A-Za-z]:/*|PATH=[A-Za-z]:\\*) ;;
+      *) die "export-io to_docker_host_path expected a Windows-style host path, got '${path_line}'" ;;
+    esac
+    ;;
+  *)
+    [ "${path_line}" = 'PATH=/tmp/arnis-export' ] || die "export-io to_docker_host_path passthrough mismatch: ${path_line}"
+    ;;
+esac
 assert_output_contains "${output}" 'IDX_DIR=0' 'export-io resolve_named_world_index exact dir'
 assert_output_contains "${output}" 'IDX_FILE=1' 'export-io resolve_named_world_index mcworld alias'
 assert_output_contains "${output}" 'EXPORT_DIR:Arnis World 1|/tmp/out|Arnis World 1|0' 'export-io dispatches directory export'
