@@ -8,6 +8,8 @@ source "${TEST_DIR}/lib.sh"
 
 log_info 'Running headless GUI Docker workflow checks...'
 
+preflight_teardown
+
 require_image "${HEADLESS_IMAGE}"
 
 cleanup() {

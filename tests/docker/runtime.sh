@@ -8,6 +8,8 @@ source "${TEST_DIR}/lib.sh"
 
 log_info 'Running runtime Docker workflow checks...'
 
+preflight_teardown
+
 require_image "${CLI_IMAGE}"
 
 output="$(${REPO_ROOT}/scripts/docker/run.sh --version)"

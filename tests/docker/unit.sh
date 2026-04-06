@@ -15,6 +15,8 @@ source "${TEST_DIR}/shared/unit-entrypoints.sh"
 source "${TEST_DIR}/shared/unit-export.sh"
 # shellcheck disable=SC1091
 source "${TEST_DIR}/shared/unit-x11.sh"
+# shellcheck disable=SC1091
+source "${TEST_DIR}/shared/unit-preflight.sh"
 
 log_info 'Running unit tests for shared scripts and entrypoint logic...'
 setup_mock_docker
@@ -24,5 +26,6 @@ run_unit_shared_core_tests
 run_unit_entrypoint_tests
 run_unit_export_tests
 run_unit_x11_tests
+run_unit_preflight_tests
 
 log_success 'Unit tests passed.'

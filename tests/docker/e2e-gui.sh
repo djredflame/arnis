@@ -70,6 +70,8 @@ trap cleanup EXIT INT TERM
 
 log_info 'Running Docker E2E GUI checks...'
 
+preflight_teardown
+
 require_image "${CLI_IMAGE}"
 require_image "${HEADLESS_IMAGE}"
 

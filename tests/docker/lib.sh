@@ -39,3 +39,15 @@ require_image() {
   local image="$1"
   docker image inspect "${image}" >/dev/null 2>&1 || die "Required image not found: ${image}. Build it first."
 }
+
+# Stop and remove all compose services before starting a test to prevent port
+# conflicts from previously-running stacks (e.g. gui-headless.sh up).
+# Safe to call unconditionally: it is a no-op when nothing is running.
+preflight_teardown() {
+  local running=""
+  running="$(run_compose ps --status running --services 2>/dev/null || true)"
+  if [ -n "${running}" ]; then
+    log_warn "Pre-flight: stopping running compose services before test: $(printf '%s' "${running}" | tr '\n' ' ')"
+    run_compose down --timeout 10 2>/dev/null || true
+  fi
+}

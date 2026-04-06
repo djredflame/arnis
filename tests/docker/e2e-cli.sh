@@ -16,6 +16,8 @@ GEN_OSM_JSON="${ARNIS_E2E_CLI_OSM_JSON:-/data/e2e-cli-worlds/e2e-overpass.json}"
 
 log_info 'Running Docker E2E CLI checks...'
 
+preflight_teardown
+
 require_image "${CLI_IMAGE}"
 
 output="$(${REPO_ROOT}/scripts/docker/run.sh --version)"

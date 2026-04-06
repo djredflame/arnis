@@ -108,6 +108,8 @@ assert_copy_created() {
 
 log_info 'Running Docker E2E export checks...'
 
+preflight_teardown
+
 require_image "${CLI_IMAGE}"
 
 generate_world_if_missing
