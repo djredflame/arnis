@@ -8,6 +8,10 @@ DOCKER_ENV_FILE="${REPO_ROOT}/.env.docker"
 DEFAULT_RUN_SERVICE="arnis"
 BASE_COMPOSE_FILE="${REPO_ROOT}/docker-compose.yml"
 
+# Keep explicit process-level override even when .env.docker provides defaults.
+_ARNIS_DISABLE_OS_COMPOSE_OVERRIDE_ORIG="${ARNIS_DISABLE_OS_COMPOSE_OVERRIDE-}"
+_ARNIS_DISABLE_OS_COMPOSE_OVERRIDE_WAS_SET="${ARNIS_DISABLE_OS_COMPOSE_OVERRIDE+x}"
+
 # shellcheck disable=SC1091
 source "${SHARED_DIR}/common.sh"
 
@@ -17,6 +21,13 @@ if [ -f "${DOCKER_ENV_FILE}" ]; then
   source "${DOCKER_ENV_FILE}"
   set +a
 fi
+
+if [ "${_ARNIS_DISABLE_OS_COMPOSE_OVERRIDE_WAS_SET}" = "x" ]; then
+  ARNIS_DISABLE_OS_COMPOSE_OVERRIDE="${_ARNIS_DISABLE_OS_COMPOSE_OVERRIDE_ORIG}"
+fi
+
+unset _ARNIS_DISABLE_OS_COMPOSE_OVERRIDE_ORIG
+unset _ARNIS_DISABLE_OS_COMPOSE_OVERRIDE_WAS_SET
 
 print_repo_hint() {
   log_plain "Runs from: ${REPO_ROOT}"

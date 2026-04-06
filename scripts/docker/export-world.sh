@@ -208,10 +208,13 @@ export_world_dir() {
   local export_dir="$2"
   local target_name="$3"
   local overwrite_existing="$4"
+  local export_mount_path=""
+
+  export_mount_path="$(to_docker_host_path "${export_dir}")"
 
   docker run --rm \
     -v "${DATA_VOLUME}:/data:ro" \
-    -v "${export_dir}:/out" \
+    -v "${export_mount_path}:/out" \
     "${DOCKER_COPY_IMAGE}" \
     sh -eu -c '
       src="$1"
@@ -230,10 +233,13 @@ export_mcworld_file() {
   local mcworld_file_name="$1"
   local export_dir="$2"
   local target_file_name="$3"
+  local export_mount_path=""
+
+  export_mount_path="$(to_docker_host_path "${export_dir}")"
 
   docker run --rm \
     -v "${DATA_VOLUME}:/data:ro" \
-    -v "${export_dir}:/out" \
+    -v "${export_mount_path}:/out" \
     "${DOCKER_COPY_IMAGE}" \
     sh -eu -c '
       src="$1"
@@ -300,6 +306,30 @@ resolve_named_world_index() {
   fi
 
   printf '%s\n' "${matches[0]}"
+}
+
+to_docker_host_path() {
+  local input_path="$1"
+  local os_name=""
+
+  os_name="$(uname -s 2>/dev/null || printf unknown)"
+
+  case "${os_name}" in
+    MINGW*|MSYS*|CYGWIN*|Windows_NT)
+      if command -v cygpath >/dev/null 2>&1; then
+        cygpath -am "${input_path}"
+        return 0
+      fi
+
+      if converted_path="$(cd "${input_path}" 2>/dev/null && pwd -W 2>/dev/null)"; then
+        printf '%s\n' "${converted_path}"
+        return 0
+      fi
+
+      ;;
+  esac
+
+  printf '%s\n' "${input_path}"
 }
 
 export_entry_by_index() {
