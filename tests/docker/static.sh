@@ -10,6 +10,7 @@ log_info 'Running static Docker workflow checks...'
 
 bash -n "${REPO_ROOT}"/scripts/shared/*.sh
 bash -n "${REPO_ROOT}"/scripts/docker/*.sh
+bash -n "${REPO_ROOT}"/scripts/docker/shared/*.sh
 
 require_file "${REPO_ROOT}/.env.docker.example"
 require_env_key "ARNIS_BUILD_NETWORK"
