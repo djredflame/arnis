@@ -14,6 +14,25 @@ GEN_INPUT_JSON="${ARNIS_E2E_EXPORT_INPUT_JSON:-/data/e2e-cli-worlds/e2e-overpass
 GEN_RETRIES="${ARNIS_E2E_EXPORT_GENERATION_RETRIES:-2}"
 GEN_RETRY_DELAY="${ARNIS_E2E_EXPORT_GENERATION_RETRY_DELAY:-5}"
 HOST_EXPORT_DIR="${ARNIS_E2E_EXPORT_HOST_DIR:-${REPO_ROOT}/.tmp/e2e-export-out}"
+EXPORT_VERIFY_RETRIES="${ARNIS_E2E_EXPORT_VERIFY_RETRIES:-10}"
+EXPORT_VERIFY_RETRY_DELAY="${ARNIS_E2E_EXPORT_VERIFY_RETRY_DELAY:-1}"
+EXPORT_VERIFY_IMAGE="${ARNIS_DOCKER_COPY_IMAGE:-alpine:latest}"
+
+verify_exported_world_once() {
+  local world_name="$1"
+  local out_dir="$2"
+
+  docker run --rm \
+    -v "${out_dir}:/out:ro" \
+    "${EXPORT_VERIFY_IMAGE}" \
+    sh -eu -c '
+      world="$1"
+      [ -d "/out/${world}" ]
+      [ -f "/out/${world}/level.dat" ]
+      [ -d "/out/${world}/region" ]
+      ls "/out/${world}"/region/*.mca >/dev/null 2>&1
+    ' sh "${world_name}" >/dev/null 2>&1
+}
 
 generate_world_if_missing() {
   if e2e_get_latest_world_name "${GEN_OUTPUT_DIR}" >/dev/null 2>&1; then
@@ -25,11 +44,22 @@ generate_world_if_missing() {
 verify_exported_world() {
   local world_name="$1"
   local out_dir="$2"
+  local attempt=1
 
-  [ -d "${out_dir}/${world_name}" ] || die "Expected exported world directory at ${out_dir}/${world_name}"
-  [ -f "${out_dir}/${world_name}/level.dat" ] || die "Exported world missing level.dat"
-  [ -d "${out_dir}/${world_name}/region" ] || die "Exported world missing region directory"
-  ls "${out_dir}/${world_name}"/region/*.mca >/dev/null 2>&1 || die "Exported world missing .mca files"
+  while [ "${attempt}" -le "${EXPORT_VERIFY_RETRIES}" ]; do
+    if verify_exported_world_once "${world_name}" "${out_dir}"; then
+      return 0
+    fi
+
+    if [ "${attempt}" -ge "${EXPORT_VERIFY_RETRIES}" ]; then
+      break
+    fi
+
+    sleep "${EXPORT_VERIFY_RETRY_DELAY}"
+    attempt=$((attempt + 1))
+  done
+
+  die "Expected exported world directory at ${out_dir}/${world_name}"
 }
 
 assert_copy_created() {
@@ -37,8 +67,14 @@ assert_copy_created() {
   local out_dir="$2"
   local copy_dir="${out_dir}/${world_name} (copy)"
 
-  [ -d "${copy_dir}" ] || die "Expected copy directory at ${copy_dir}"
-  [ -f "${copy_dir}/level.dat" ] || die "Copy export missing level.dat"
+  docker run --rm \
+    -v "${out_dir}:/out:ro" \
+    "${EXPORT_VERIFY_IMAGE}" \
+    sh -eu -c '
+      world="$1"
+      [ -d "/out/${world} (copy)" ]
+      [ -f "/out/${world} (copy)/level.dat" ]
+    ' sh "${world_name}" >/dev/null 2>&1 || die "Expected copy directory at ${copy_dir}"
 }
 
 log_info 'Running Docker E2E export checks...'
