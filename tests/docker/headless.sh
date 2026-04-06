@@ -20,8 +20,11 @@ trap cleanup EXIT INT TERM
 run_compose up -d arnis-gui-headless >/dev/null
 sleep "${HEADLESS_WAIT_SECONDS}"
 
-output="$(run_compose ps --status running --services arnis-gui-headless 2>/dev/null || true)"
-assert_output_contains "${output}" "arnis-gui-headless" "compose ps --services for arnis-gui-headless"
+container_id="$(run_compose ps -q arnis-gui-headless 2>/dev/null || true)"
+[ -n "${container_id}" ] || die 'compose did not return a container id for arnis-gui-headless'
+
+running_state="$(docker inspect -f '{{.State.Running}}' "${container_id}" 2>/dev/null || true)"
+[ "${running_state}" = "true" ] || die 'arnis-gui-headless container is not in running state'
 
 output="$(run_compose logs --tail 100 arnis-gui-headless 2>&1 || true)"
 assert_output_contains "${output}" "PORT=" "arnis-gui-headless startup logs"

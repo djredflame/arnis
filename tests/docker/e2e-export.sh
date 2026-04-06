@@ -18,12 +18,38 @@ EXPORT_VERIFY_RETRIES="${ARNIS_E2E_EXPORT_VERIFY_RETRIES:-10}"
 EXPORT_VERIFY_RETRY_DELAY="${ARNIS_E2E_EXPORT_VERIFY_RETRY_DELAY:-1}"
 EXPORT_VERIFY_IMAGE="${ARNIS_DOCKER_COPY_IMAGE:-alpine:latest}"
 
+to_docker_host_path() {
+  local input_path="$1"
+  local os_name=""
+
+  os_name="$(uname -s 2>/dev/null || printf unknown)"
+
+  case "${os_name}" in
+    MINGW*|MSYS*|CYGWIN*|Windows_NT)
+      if command -v cygpath >/dev/null 2>&1; then
+        cygpath -am "${input_path}"
+        return 0
+      fi
+
+      if converted_path="$(cd "${input_path}" 2>/dev/null && pwd -W 2>/dev/null)"; then
+        printf '%s\n' "${converted_path}"
+        return 0
+      fi
+      ;;
+  esac
+
+  printf '%s\n' "${input_path}"
+}
+
 verify_exported_world_once() {
   local world_name="$1"
   local out_dir="$2"
+  local out_mount=""
+
+  out_mount="$(to_docker_host_path "${out_dir}")"
 
   docker run --rm \
-    -v "${out_dir}:/out:ro" \
+    -v "${out_mount}:/out:ro" \
     "${EXPORT_VERIFY_IMAGE}" \
     sh -eu -c '
       world="$1"
@@ -66,9 +92,12 @@ assert_copy_created() {
   local world_name="$1"
   local out_dir="$2"
   local copy_dir="${out_dir}/${world_name} (copy)"
+  local out_mount=""
+
+  out_mount="$(to_docker_host_path "${out_dir}")"
 
   docker run --rm \
-    -v "${out_dir}:/out:ro" \
+    -v "${out_mount}:/out:ro" \
     "${EXPORT_VERIFY_IMAGE}" \
     sh -eu -c '
       world="$1"
