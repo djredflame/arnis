@@ -1,1 +1,4 @@
 src/gui/** linguist-vendored
+
+# Shell scripts must stay LF so Linux shebangs work in containers.
+*.sh text eol=lf
