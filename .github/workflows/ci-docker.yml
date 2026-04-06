@@ -1,0 +1,39 @@
+name: CI Docker
+
+# Trigger CI on pull requests when relevant files change, and pushes to main
+on:
+  pull_request:
+    paths:
+      - '.github/**'
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'docker-compose.yml'
+      - 'docker-compose.*.yml'
+      - 'Dockerfile'
+      - '.env.docker.example'
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Copy env example
+        run: cp .env.docker.example .env.docker
+
+      - name: Build CLI image
+        run: ./scripts/docker/build.sh arnis
+
+      - name: Build headless GUI image
+        run: ./scripts/docker/build.sh arnis-gui-headless
+
+      - name: Run complete Docker test suite (all wrappers + all modes)
+        run: ARNIS_GUI_VNC_PORT=5901 ./scripts/docker/test.sh all
