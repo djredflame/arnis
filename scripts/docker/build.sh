@@ -44,4 +44,8 @@ else
   log_info 'Building without build-time cargo test validation.'
 fi
 
-run_compose_with_env ARNIS_RUN_BUILD_VALIDATION "${validation_mode}" build "${build_args[@]}"
+if [ "${#build_args[@]}" -gt 0 ]; then
+  run_compose_with_env ARNIS_RUN_BUILD_VALIDATION "${validation_mode}" build "${build_args[@]}"
+else
+  run_compose_with_env ARNIS_RUN_BUILD_VALIDATION "${validation_mode}" build
+fi

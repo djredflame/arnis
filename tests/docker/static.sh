@@ -8,9 +8,9 @@ source "${TEST_DIR}/lib.sh"
 
 log_info 'Running static Docker workflow checks...'
 
-bash -n "${REPO_ROOT}"/scripts/shared/*.sh
-bash -n "${REPO_ROOT}"/scripts/docker/*.sh
-bash -n "${REPO_ROOT}"/scripts/docker/shared/*.sh
+while IFS= read -r script_path; do
+	bash -n "${script_path}"
+done < <(find "${REPO_ROOT}/scripts" "${REPO_ROOT}/tests" -type f -name '*.sh' | sort)
 
 require_file "${REPO_ROOT}/.env.docker.example"
 require_env_key "ARNIS_BUILD_NETWORK"

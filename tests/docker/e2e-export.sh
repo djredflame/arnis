@@ -5,6 +5,8 @@ set -Eeuo pipefail
 TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck disable=SC1091
 source "${TEST_DIR}/lib.sh"
+# shellcheck disable=SC1091
+source "${TEST_DIR}/shared/e2e-worlds.sh"
 
 GEN_OUTPUT_DIR="${ARNIS_E2E_EXPORT_OUTPUT_DIR:-/data/e2e-export-worlds}"
 GEN_BBOX="${ARNIS_E2E_EXPORT_BBOX:-54.627053,9.927928,54.627553,9.928428}"
@@ -13,74 +15,11 @@ GEN_RETRIES="${ARNIS_E2E_EXPORT_GENERATION_RETRIES:-2}"
 GEN_RETRY_DELAY="${ARNIS_E2E_EXPORT_GENERATION_RETRY_DELAY:-5}"
 HOST_EXPORT_DIR="${ARNIS_E2E_EXPORT_HOST_DIR:-${REPO_ROOT}/.tmp/e2e-export-out}"
 
-get_latest_world_name() {
-  run_compose run --rm --entrypoint sh arnis -c '
-    set -eu
-    base="$1"
-    mkdir -p "$base"
-    latest=""
-    for d in "$base"/Arnis\ World\ *; do
-      if [ -d "$d" ] && [ -f "$d/level.dat" ]; then
-        latest="$(basename "$d")"
-      fi
-    done
-    [ -n "$latest" ]
-    printf "%s\n" "$latest"
-  ' sh "${GEN_OUTPUT_DIR}"
-}
-
 generate_world_if_missing() {
-  if get_latest_world_name >/dev/null 2>&1; then
+  if e2e_get_latest_world_name "${GEN_OUTPUT_DIR}" >/dev/null 2>&1; then
     return 0
   fi
-
-  local attempt=1
-  local use_file_input=0
-
-  if run_compose run --rm --entrypoint sh arnis -c '
-    set -eu
-    file="$1"
-    [ -f "$file" ]
-    [ -s "$file" ]
-  ' sh "${GEN_INPUT_JSON}" >/dev/null 2>&1; then
-    use_file_input=1
-  fi
-
-  while [ "${attempt}" -le "${GEN_RETRIES}" ]; do
-    if [ "${use_file_input}" -eq 1 ]; then
-      if "${REPO_ROOT}/scripts/docker/run.sh" arnis \
-        --output-dir "${GEN_OUTPUT_DIR}" \
-        --bbox "${GEN_BBOX}" \
-        --file "${GEN_INPUT_JSON}" \
-        --interior=false \
-        --roof=false \
-        --land-cover=false \
-        --timeout 30
-      then
-        return 0
-      fi
-    elif "${REPO_ROOT}/scripts/docker/run.sh" arnis \
-      --output-dir "${GEN_OUTPUT_DIR}" \
-      --bbox "${GEN_BBOX}" \
-      --save-json-file "${GEN_INPUT_JSON}" \
-      --interior=false \
-      --roof=false \
-      --land-cover=false \
-      --timeout 30
-    then
-      return 0
-    fi
-
-    if [ "${attempt}" -ge "${GEN_RETRIES}" ]; then
-      break
-    fi
-
-    log_warn "E2E export setup generation attempt ${attempt}/${GEN_RETRIES} failed, retrying in ${GEN_RETRY_DELAY}s..."
-    sleep "${GEN_RETRY_DELAY}"
-    attempt=$((attempt + 1))
-  done
-
-  return 1
+  e2e_run_generation_with_retry "${GEN_OUTPUT_DIR}" "${GEN_BBOX}" "${GEN_INPUT_JSON}" "${GEN_RETRIES}" "${GEN_RETRY_DELAY}" 'E2E export setup'
 }
 
 verify_exported_world() {
@@ -107,7 +46,7 @@ log_info 'Running Docker E2E export checks...'
 require_image "${CLI_IMAGE}"
 
 generate_world_if_missing
-world_name="$(get_latest_world_name)"
+world_name="$(e2e_get_latest_world_name "${GEN_OUTPUT_DIR}")"
 
 list_output="$(${REPO_ROOT}/scripts/docker/export-world.sh --list 2>&1 || true)"
 assert_output_contains "${list_output}" "Detected worlds:" "export-world --list output"

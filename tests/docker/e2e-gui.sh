@@ -5,6 +5,8 @@ set -Eeuo pipefail
 TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck disable=SC1091
 source "${TEST_DIR}/lib.sh"
+# shellcheck disable=SC1091
+source "${TEST_DIR}/shared/e2e-worlds.sh"
 
 VNC_HOST="${ARNIS_GUI_VNC_BIND:-127.0.0.1}"
 VNC_PORT="${ARNIS_GUI_VNC_PORT:-5900}"
@@ -59,94 +61,6 @@ wait_for_vnc_ready() {
   die "VNC readiness query timed out on ${VNC_HOST}:${VNC_PORT} after ${VNC_READY_WAIT_SECONDS}s"
 }
 
-count_generated_worlds() {
-  run_compose run --rm --entrypoint sh arnis -c '
-    set -eu
-    base="$1"
-    mkdir -p "$base"
-    count=0
-    for d in "$base"/Arnis\ World\ *; do
-      if [ -d "$d" ]; then
-        count=$((count + 1))
-      fi
-    done
-    printf "%s\n" "$count"
-  ' sh "${GEN_OUTPUT_DIR}"
-}
-
-verify_latest_world_artifacts() {
-  run_compose run --rm --entrypoint sh arnis -c '
-    set -eu
-    base="$1"
-
-    latest=""
-    for d in "$base"/Arnis\ World\ *; do
-      if [ -d "$d" ]; then
-        latest="$d"
-      fi
-    done
-
-    [ -n "$latest" ]
-    [ -f "$latest/level.dat" ]
-    [ -d "$latest/region" ]
-    ls "$latest"/region/*.mca >/dev/null 2>&1
-  ' sh "${GEN_OUTPUT_DIR}"
-}
-
-run_generation_with_retry() {
-  local attempt=1
-  local use_file_input=0
-
-  if run_compose run --rm --entrypoint sh arnis -c '
-    set -eu
-    file="$1"
-    [ -f "$file" ]
-    [ -s "$file" ]
-  ' sh "${GEN_INPUT_JSON}" >/dev/null 2>&1; then
-    use_file_input=1
-  fi
-
-  while [ "${attempt}" -le "${GEN_RETRIES}" ]; do
-    if [ "${use_file_input}" -eq 1 ]; then
-      if "${REPO_ROOT}/scripts/docker/run.sh" arnis \
-        --output-dir "${GEN_OUTPUT_DIR}" \
-        --bbox "${GEN_BBOX}" \
-        --file "${GEN_INPUT_JSON}" \
-        --interior=false \
-        --roof=false \
-        --land-cover=false \
-        --timeout 30
-      then
-        return 0
-      fi
-    elif "${REPO_ROOT}/scripts/docker/run.sh" arnis \
-      --output-dir "${GEN_OUTPUT_DIR}" \
-      --bbox "${GEN_BBOX}" \
-      --save-json-file "${GEN_INPUT_JSON}" \
-      --interior=false \
-      --roof=false \
-      --land-cover=false \
-      --timeout 30
-    then
-      return 0
-    fi
-
-    if [ "${attempt}" -ge "${GEN_RETRIES}" ]; then
-      break
-    fi
-
-    if [ "${use_file_input}" -eq 1 ]; then
-      log_warn "GUI E2E (file input) generation attempt ${attempt}/${GEN_RETRIES} failed, retrying in ${GEN_RETRY_DELAY}s..."
-    else
-      log_warn "GUI E2E (network fallback) generation attempt ${attempt}/${GEN_RETRIES} failed, retrying in ${GEN_RETRY_DELAY}s..."
-    fi
-    sleep "${GEN_RETRY_DELAY}"
-    attempt=$((attempt + 1))
-  done
-
-  return 1
-}
-
 cleanup() {
   run_compose stop arnis-gui-headless >/dev/null 2>&1 || true
   run_compose rm -fsv arnis-gui-headless >/dev/null 2>&1 || true
@@ -165,13 +79,13 @@ vnc_status="$(wait_for_vnc_ready)"
 assert_output_contains "${vnc_status}" "client_count:" "initial VNC readiness"
 
 # While GUI stack is running, generate a world via CLI path and verify artifacts.
-before_count="$(count_generated_worlds)"
-run_generation_with_retry
-after_count="$(count_generated_worlds)"
+before_count="$(e2e_count_generated_worlds "${GEN_OUTPUT_DIR}")"
+e2e_run_generation_with_retry "${GEN_OUTPUT_DIR}" "${GEN_BBOX}" "${GEN_INPUT_JSON}" "${GEN_RETRIES}" "${GEN_RETRY_DELAY}" 'GUI E2E'
+after_count="$(e2e_count_generated_worlds "${GEN_OUTPUT_DIR}")"
 if [ "${after_count}" -le "${before_count}" ]; then
   die "Expected world count in ${GEN_OUTPUT_DIR} to increase while GUI is running (before=${before_count}, after=${after_count})"
 fi
-verify_latest_world_artifacts
+e2e_verify_latest_world_artifacts "${GEN_OUTPUT_DIR}" 0
 
 # Restart regression guard for GUI stack.
 run_compose stop arnis-gui-headless >/dev/null
