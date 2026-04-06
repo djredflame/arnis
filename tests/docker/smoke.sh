@@ -3,6 +3,10 @@
 set -Eeuo pipefail
 
 TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "${TEST_DIR}/../.." && pwd)"
+
+# shellcheck disable=SC1091
+source "${REPO_ROOT}/scripts/shared/common.sh"
 
 run_mode() {
   local mode="$1"
@@ -10,19 +14,20 @@ run_mode() {
 }
 
 print_help() {
-  echo 'Usage: smoke.sh [static|unit|runtime|headless|e2e-cli|e2e-gui|e2e|all]'
-  echo
-  echo 'Runs Docker test suites.'
-  echo
-  echo 'Modes:'
-  echo '  static    Syntax, help text, env example, and docker compose config checks'
-  echo '  unit      Unit tests for shared scripts and entrypoint logic (no Docker required)'
-  echo '  runtime   CLI/runtime smoke checks (requires built Docker images)'
-  echo '  headless  Headless GUI smoke checks (requires built headless Docker image)'
-  echo '  e2e-cli   CLI end-to-end checks (world generation + artifact verification)'
-  echo '  e2e-gui   Headless GUI end-to-end checks (VNC handshake + restart + generation while GUI is running)'
-  echo '  e2e       Run both e2e-cli and e2e-gui checks'
-  echo '  all       Run static, unit, runtime, headless, and e2e suites'
+  log_plain 'Usage: smoke.sh [static|unit|runtime|headless|e2e-cli|e2e-gui|e2e-export|e2e|all]'
+  log_plain
+  log_plain 'Runs Docker test suites.'
+  log_plain
+  log_plain 'Modes:'
+  log_plain '  static    Syntax, help text, env example, and docker compose config checks'
+  log_plain '  unit      Unit tests for shared scripts and entrypoint logic (no Docker required)'
+  log_plain '  runtime   CLI/runtime smoke checks (requires built Docker images)'
+  log_plain '  headless  Headless GUI smoke checks (requires built headless Docker image)'
+  log_plain '  e2e-cli   CLI end-to-end checks (world generation + artifact verification)'
+  log_plain '  e2e-gui   Headless GUI end-to-end checks (VNC handshake + restart + generation while GUI is running)'
+  log_plain '  e2e-export Export end-to-end checks (export-world.sh list + real export verification)'
+  log_plain '  e2e       Run e2e-cli, e2e-gui, and e2e-export checks'
+  log_plain '  all       Run static, unit, runtime, headless, and e2e suites'
 }
 
 case "${1:-static}" in
@@ -37,6 +42,9 @@ case "${1:-static}" in
     ;;
   e2e-gui)
     run_mode e2e-gui
+    ;;
+  e2e-export)
+    run_mode e2e-export
     ;;
   e2e)
     run_mode e2e

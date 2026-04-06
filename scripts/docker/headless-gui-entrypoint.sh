@@ -14,6 +14,24 @@ if [ -f "${COMMON_SH}" ]; then
   source "${COMMON_SH}"
 fi
 
+# Keep entrypoint logging consistent with shared logger.sh when available,
+# while remaining robust if common.sh/logger.sh cannot be sourced.
+if ! declare -F log_plain >/dev/null 2>&1; then
+  log_plain() { printf '%s\n' "$*"; }
+fi
+if ! declare -F log_info >/dev/null 2>&1; then
+  log_info() { printf '[INFO] %s\n' "$*"; }
+fi
+if ! declare -F log_success >/dev/null 2>&1; then
+  log_success() { printf '[OK] %s\n' "$*"; }
+fi
+if ! declare -F log_warn >/dev/null 2>&1; then
+  log_warn() { printf '[WARN] %s\n' "$*" >&2; }
+fi
+if ! declare -F log_error >/dev/null 2>&1; then
+  log_error() { printf '[ERROR] %s\n' "$*" >&2; }
+fi
+
 DISPLAY_ID="${ARNIS_HEADLESS_DISPLAY:-${DISPLAY:-:99}}"
 HEADLESS_WIDTH="${ARNIS_HEADLESS_WIDTH:-1920}"
 HEADLESS_HEIGHT="${ARNIS_HEADLESS_HEIGHT:-1080}"
@@ -64,6 +82,7 @@ _display_num="${DISPLAY_ID#:}"
 _display_num="${_display_num%%.*}"
 rm -f "/tmp/.X${_display_num}-lock" "/tmp/.X11-unix/X${_display_num}"
 
+log_info "Starting Xvfb on ${DISPLAY_ID} (${HEADLESS_WIDTH}x${HEADLESS_HEIGHT}x${HEADLESS_DEPTH})..."
 Xvfb "${DISPLAY_ID}" -screen 0 "${HEADLESS_WIDTH}x${HEADLESS_HEIGHT}x${HEADLESS_DEPTH}" -ac -nolisten tcp -extension MIT-SHM < /dev/null >"${XVFB_LOG}" 2>&1 &
 
 for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -78,6 +97,7 @@ if [ "${HEADLESS_NO_TOOLBAR}" = "1" ]; then
   FLUXBOX_ARGS+=(-no-toolbar)
 fi
 
+log_info 'Starting Fluxbox window manager...'
 DISPLAY="${DISPLAY_ID}" HOME="${HOME_DIR}" fluxbox "${FLUXBOX_ARGS[@]}" < /dev/null >"${FLUXBOX_LOG}" 2>&1 &
 X11VNC_ARGS=(
   -display "${DISPLAY_ID}"
@@ -101,6 +121,7 @@ else
   X11VNC_ARGS+=(-nopw)
 fi
 
+log_info "Starting x11vnc on ${VNC_BIND}:${VNC_PORT}..."
 DISPLAY="${DISPLAY_ID}" x11vnc "${X11VNC_ARGS[@]}"
 
 wait_for_vnc() {
@@ -125,8 +146,10 @@ wait_for_vnc() {
 }
 
 if ! wait_for_vnc; then
+  log_error 'x11vnc did not become ready in time. Recent x11vnc log output:'
   tail -n 50 "${X11VNC_LOG}" >&2 || true
   exit 1
 fi
 
+log_success 'Headless GUI is ready. Launching arnis...'
 exec /usr/local/bin/arnis

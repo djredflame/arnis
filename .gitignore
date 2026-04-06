@@ -30,6 +30,7 @@ Thumbs.db
 
 # Generated files
 /export.json
+/exports/
 /parsed_osm_data.txt
 /elevation_debug.png
 /terrain-tile-cache

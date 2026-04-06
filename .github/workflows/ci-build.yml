@@ -111,3 +111,6 @@ jobs:
 
       - name: Run Docker E2E GUI tests
         run: bash tests/docker/e2e-gui.sh
+
+      - name: Run Docker E2E export tests
+        run: bash tests/docker/e2e-export.sh
