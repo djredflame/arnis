@@ -40,6 +40,12 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
+# Remove stale Xvfb lock file from a previous container run (e.g. after docker stop).
+# Without this, Xvfb refuses to start and x11vnc subsequently fails.
+_display_num="${DISPLAY_ID#:}"
+_display_num="${_display_num%%.*}"
+rm -f "/tmp/.X${_display_num}-lock" "/tmp/.X11-unix/X${_display_num}"
+
 Xvfb "${DISPLAY_ID}" -screen 0 "${HEADLESS_WIDTH}x${HEADLESS_HEIGHT}x${HEADLESS_DEPTH}" -ac -nolisten tcp -extension MIT-SHM < /dev/null >"${XVFB_LOG}" 2>&1 &
 
 for _ in 1 2 3 4 5 6 7 8 9 10; do
