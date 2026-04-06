@@ -1,0 +1,113 @@
+# Template compose file for running prebuilt images from a registry.
+#
+# Usage example:
+# 1) Copy .env.docker.example -> .env.docker
+# 2) Set image variables to your registry tags, e.g.:
+#    ARNIS_CLI_IMAGE=ghcr.io/<owner>/arnis-cli:latest
+#    ARNIS_TEST_IMAGE=ghcr.io/<owner>/arnis-test:latest
+#    ARNIS_GUI_IMAGE=ghcr.io/<owner>/arnis-gui:latest
+#    ARNIS_HEADLESS_IMAGE=ghcr.io/<owner>/arnis-gui-headless:latest
+# 3) Run with this file:
+#    docker compose --env-file .env.docker -f docker-compose.registry.template.yml up -d <service>
+
+services:
+  # Cross-platform CLI workflow for generation and headless runs.
+  arnis:
+    image: ${ARNIS_CLI_IMAGE:?Set ARNIS_CLI_IMAGE in .env.docker}
+    pull_policy: ${ARNIS_PULL_POLICY:-always}
+    working_dir: /data
+    environment:
+      HOME: /data
+      XDG_CACHE_HOME: ${ARNIS_CACHE_HOME:-/data/.cache}
+    dns:
+      - ${ARNIS_DNS_1:-1.1.1.1}
+      - ${ARNIS_DNS_2:-8.8.8.8}
+    volumes:
+      - ${ARNIS_DATA_VOLUME:-arnis_data}:/data
+    networks:
+      - arnis
+    entrypoint:
+      - /usr/local/bin/arnis
+    restart: "no"
+
+  # Cross-platform live integration tests that depend on external Overpass APIs.
+  arnis-test-live:
+    image: ${ARNIS_TEST_IMAGE:?Set ARNIS_TEST_IMAGE in .env.docker}
+    pull_policy: ${ARNIS_PULL_POLICY:-always}
+    working_dir: /src
+    dns:
+      - ${ARNIS_DNS_1:-1.1.1.1}
+      - ${ARNIS_DNS_2:-8.8.8.8}
+    entrypoint:
+      - /bin/sh
+    command:
+      - -c
+      - |
+        attempts=0
+        until cargo test --locked --all-targets --all-features; do
+          attempts=$$((attempts + 1))
+          if [ "$$attempts" -ge ${ARNIS_TEST_RETRIES:-5} ]; then
+            exit 1
+          fi
+          echo "Retrying live test suite after transient network failure ($$attempts/${ARNIS_TEST_RETRIES:-5})..."
+          sleep ${ARNIS_TEST_RETRY_DELAY:-5}
+        done
+    networks:
+      - arnis
+    restart: "no"
+
+  # Linux-only desktop/Tauri runtime that requires an X11 session on the host.
+  arnis-gui:
+    image: ${ARNIS_GUI_IMAGE:?Set ARNIS_GUI_IMAGE in .env.docker}
+    pull_policy: ${ARNIS_PULL_POLICY:-always}
+    working_dir: /data
+    dns:
+      - ${ARNIS_DNS_1:-1.1.1.1}
+      - ${ARNIS_DNS_2:-8.8.8.8}
+    environment:
+      DISPLAY: ${ARNIS_GUI_DISPLAY:-${DISPLAY:-:0}}
+      HOME: /data
+      XDG_CACHE_HOME: ${ARNIS_CACHE_HOME:-/data/.cache}
+    volumes:
+      - ${ARNIS_DATA_VOLUME:-arnis_data}:/data
+      - ${ARNIS_X11_SOCKET_DIR:-/tmp/.X11-unix}:${ARNIS_X11_SOCKET_DIR:-/tmp/.X11-unix}
+    networks:
+      - arnis
+    entrypoint:
+      - /usr/local/bin/arnis
+    restart: "no"
+
+  # Linux-only headless desktop/Tauri runtime exposed over VNC for Docker-only setups.
+  arnis-gui-headless:
+    image: ${ARNIS_HEADLESS_IMAGE:?Set ARNIS_HEADLESS_IMAGE in .env.docker}
+    pull_policy: ${ARNIS_PULL_POLICY:-always}
+    working_dir: /data
+    dns:
+      - ${ARNIS_DNS_1:-1.1.1.1}
+      - ${ARNIS_DNS_2:-8.8.8.8}
+    environment:
+      DISPLAY: ${ARNIS_HEADLESS_DISPLAY:-:99}
+      HOME: /data
+      XDG_CACHE_HOME: ${ARNIS_CACHE_HOME:-/data/.cache}
+      ARNIS_HEADLESS_DISPLAY: ${ARNIS_HEADLESS_DISPLAY:-:99}
+      ARNIS_HEADLESS_WIDTH: ${ARNIS_HEADLESS_WIDTH:-1920}
+      ARNIS_HEADLESS_HEIGHT: ${ARNIS_HEADLESS_HEIGHT:-1080}
+      ARNIS_HEADLESS_DEPTH: ${ARNIS_HEADLESS_DEPTH:-24}
+      ARNIS_HEADLESS_FULLSCREEN: ${ARNIS_HEADLESS_FULLSCREEN:-1}
+      ARNIS_HEADLESS_NO_TOOLBAR: ${ARNIS_HEADLESS_NO_TOOLBAR:-1}
+      ARNIS_GUI_VNC_PORT: ${ARNIS_GUI_VNC_PORT:-5900}
+      ARNIS_GUI_VNC_PASSWORD: ${ARNIS_GUI_VNC_PASSWORD:-}
+    # Keep host networking for Linux headless VNC parity with current setup.
+    network_mode: host
+    entrypoint:
+      - /usr/local/bin/headless-gui-entrypoint
+    restart: "no"
+
+volumes:
+  arnis_data:
+    name: ${ARNIS_DATA_VOLUME:-arnis_data}
+
+networks:
+  arnis:
+    name: ${ARNIS_NETWORK_NAME:-arnis}
+    driver: ${ARNIS_NETWORK_DRIVER:-bridge}
