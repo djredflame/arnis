@@ -8,6 +8,7 @@ source "${TEST_DIR}/lib.sh"
 
 VNC_HOST="${ARNIS_GUI_VNC_BIND:-127.0.0.1}"
 VNC_PORT="${ARNIS_GUI_VNC_PORT:-5900}"
+VNC_READY_WAIT_SECONDS="${ARNIS_E2E_GUI_VNC_READY_WAIT:-45}"
 GEN_OUTPUT_DIR="${ARNIS_E2E_GUI_OUTPUT_DIR:-/data/e2e-gui-worlds}"
 GEN_BBOX="${ARNIS_E2E_GUI_BBOX:-54.627053,9.927928,54.627553,9.928428}"
 GEN_RETRIES="${ARNIS_E2E_GUI_GENERATION_RETRIES:-2}"
@@ -36,34 +37,26 @@ wait_for_container_up() {
   die "arnis-gui-headless did not reach Up state"
 }
 
-wait_for_vnc_banner() {
-  local host="$1"
-  local port="$2"
+wait_for_vnc_ready() {
+  local display_id="${ARNIS_HEADLESS_DISPLAY:-:99}"
+  local attempt=0
 
-  python3 - <<'PY' "$host" "$port"
-import socket
-import sys
-import time
+  while [ "${attempt}" -lt "${VNC_READY_WAIT_SECONDS}" ]; do
+    if output="$(run_compose exec -T arnis-gui-headless sh -lc 'x11vnc -display "'"${display_id}"'" -query client_count' 2>/dev/null)"; then
+      case "${output}" in
+        *"client_count:"*)
+          printf '%s\n' "${output}"
+          return 0
+          ;;
+      esac
+    fi
 
-host = sys.argv[1]
-port = int(sys.argv[2])
-last_err = None
+    attempt=$((attempt + 1))
+    sleep 1
+  done
 
-for _ in range(30):
-    try:
-        with socket.create_connection((host, port), timeout=2.0) as s:
-            banner = s.recv(16)
-            if banner.startswith(b"RFB "):
-                print(banner.decode("ascii", errors="ignore").strip())
-                sys.exit(0)
-            last_err = RuntimeError(f"unexpected VNC banner: {banner!r}")
-    except Exception as exc:
-        last_err = exc
-    time.sleep(1)
-
-print(f"VNC handshake failed on {host}:{port}: {last_err}", file=sys.stderr)
-sys.exit(1)
-PY
+  run_compose logs --tail 120 arnis-gui-headless >&2 || true
+  die "VNC readiness query timed out on ${VNC_HOST}:${VNC_PORT} after ${VNC_READY_WAIT_SECONDS}s"
 }
 
 count_generated_worlds() {
@@ -168,8 +161,8 @@ require_image "${HEADLESS_IMAGE}"
 
 run_compose up -d arnis-gui-headless >/dev/null
 wait_for_container_up
-banner="$(wait_for_vnc_banner "${VNC_HOST}" "${VNC_PORT}")"
-assert_output_contains "${banner}" "RFB" "initial VNC handshake"
+vnc_status="$(wait_for_vnc_ready)"
+assert_output_contains "${vnc_status}" "client_count:" "initial VNC readiness"
 
 # While GUI stack is running, generate a world via CLI path and verify artifacts.
 before_count="$(count_generated_worlds)"
@@ -184,7 +177,7 @@ verify_latest_world_artifacts
 run_compose stop arnis-gui-headless >/dev/null
 run_compose up -d arnis-gui-headless >/dev/null
 wait_for_container_up
-banner="$(wait_for_vnc_banner "${VNC_HOST}" "${VNC_PORT}")"
-assert_output_contains "${banner}" "RFB" "VNC handshake after restart"
+vnc_status="$(wait_for_vnc_ready)"
+assert_output_contains "${vnc_status}" "client_count:" "VNC readiness after restart"
 
 log_success 'Docker E2E GUI checks passed.'
