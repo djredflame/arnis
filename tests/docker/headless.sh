@@ -20,9 +20,8 @@ trap cleanup EXIT INT TERM
 run_compose up -d arnis-gui-headless >/dev/null
 sleep "${HEADLESS_WAIT_SECONDS}"
 
-output="$(run_compose ps arnis-gui-headless)"
-assert_output_contains "${output}" "arnis-gui-headless" "compose ps for arnis-gui-headless"
-assert_output_contains "${output}" "Up" "arnis-gui-headless container state"
+output="$(run_compose ps --status running --services arnis-gui-headless 2>/dev/null || true)"
+assert_output_contains "${output}" "arnis-gui-headless" "compose ps --services for arnis-gui-headless"
 
 output="$(run_compose logs --tail 100 arnis-gui-headless 2>&1 || true)"
 assert_output_contains "${output}" "PORT=" "arnis-gui-headless startup logs"

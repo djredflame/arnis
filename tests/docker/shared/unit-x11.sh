@@ -97,6 +97,7 @@ run_unit_x11_tests() {
   touch "/tmp/.X11-unix/X99"
 
   ARNIS_HEADLESS_FULLSCREEN=0 \
+  ARNIS_HEADLESS_DISPLAY=":99" \
   ARNIS_HEADLESS_STATE_DIR="${state_dir}/locktest" \
   ARNIS_HEADLESS_START_WAIT=1 \
   ARNIS_GUI_VNC_PASSWORD="" \
